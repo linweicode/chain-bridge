@@ -1,0 +1,8 @@
+{"timestamp": "2025-09-11T15:48:32.160089", "command": "/usr/local/bin/gead status --node=http://118.175.0.254:26657 --home=/home/lino/.gea_uat"}
+{"timestamp": "2025-09-11T15:51:52.843779", "command": "/usr/local/bin/gead status --node=http://118.175.0.254:26657 --home=/home/lino/.gea_uat"}
+{"timestamp": "2025-09-11T15:52:17.365827", "command": "/usr/local/bin/gead keys list --keyring-backend=test --home=/home/lino/.gea_uat --output=json"}
+{"timestamp": "2025-09-11T15:52:46.175888", "command": "/usr/local/bin/gead keys list --keyring-backend=test --home=/home/lino/.gea_uat --output=json"}
+{"timestamp": "2025-09-11T15:53:41.308004", "command": "/usr/local/bin/gead keys add user_lino_16 --keyring-backend=test --home=/home/lino/.gea_uat --output=json"}
+{"timestamp": "2025-09-11T15:58:30.125614", "command": "/usr/local/bin/gead keys add user_lino_16 --keyring-backend=test --home=/home/lino/.gea_uat --output=json"}
+{"timestamp": "2025-09-11T15:58:50.345368", "command": "/usr/local/bin/gead keys add user_lino_16 --keyring-backend=test --home=/home/lino/.gea_uat --output=json"}
+{"timestamp": "2025-09-11T15:58:53.063863", "command": "/usr/local/bin/gead keys add user_lino_16 --keyring-backend=test --home=/home/lino/.gea_uat --output=json"}

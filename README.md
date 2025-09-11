@@ -3,6 +3,236 @@
 简要介绍项目功能：  
 这是一个基于 FastAPI 的链端接口服务，封装了统一 HTTP 接口、日志记录和链端命令执行。
 
+
+第二版
+---
+
+# 请求地址
+http://localhost:8000
+
+# 环境变量说明
+
+| 参数名 | 类型 | 必填 | 默认值 | 示例 | 说明 |
+|--------|------|------|--------|------|------|
+| chain-id | string | true | gea_20-1 |  | 链ID |
+| node | string | true | http://118.175.0.254:26657 |  | 节点 RPC 地址 |
+| keyring-backend | string | true | test |  | 私钥存储方式 |
+| home | string | true | /home/lino/.gea_uat |  | 本地配置和数据目录 |
+| output | string | true | json |  | 输出格式 |
+| EnvUseMultisig | boolean | true | true |  | 是否启用多签；true/false |
+| MultisigSigners | string | true | "u1,u2,u3" |  | 多签签名的密钥名称，用于 `gead tx sign` |
+| MultisigName | string | true | global_dao |  | 合并签名时使用的 key 名称，用于 `gead tx multisign` |
+| MultisigAddress | string | true | gea1rlgwy4q58yr7kyqkm7rc4wvnyvqvuj3k36k09c |  | 多签签名地址，对应 `MultisigName` 的地址 |
+
+
+
+
+## 多签前置脚本
+```js
+// ======================================================
+// Pre-request Script: 多签开关判断
+// ======================================================
+
+// ---------------------------
+// 1. 收集请求体中的 formdata 参数
+// ---------------------------
+const formData = {};
+pm.request.body.formdata.all().forEach(item => {
+    formData[item.key] = item.value;
+});
+
+// ---------------------------
+// 2. 多签开关逻辑（最开始判断）
+// ---------------------------
+// 环境开关：环境配置是否启用多签
+const EnvUseMultisig = pm.environment.get("EnvUseMultisig") === "true";
+// 请求开关：是否在请求中带有 `generate-only=true`
+const ReqUseMultisig = formData.hasOwnProperty("generate-only") && formData["generate-only"] === "true";
+// 最终判断是否进入多签流程
+const NeedMultisig = EnvUseMultisig && ReqUseMultisig;
+
+console.log("是否进入多签流程 NeedMultisig:", NeedMultisig);
+
+// ---------------------------
+// 3. 如果不需要多签 → 移除 generate-only 并退出
+// ---------------------------
+if (!NeedMultisig) {
+    if (formData.hasOwnProperty("generate-only")) {
+        delete formData["generate-only"];
+        pm.request.body.formdata.remove("generate-only"); // 确保请求不带 generate-only
+        console.log("已移除请求参数 generate-only，跳过多签逻辑");
+    }
+    // 停止后续 Pre-request 脚本或测试脚本的多签执行逻辑
+    pm.environment.set("NeedMultisig", "false");
+} else {
+    pm.environment.set("NeedMultisig", "true");
+}
+
+```
+
+
+## 多签后置脚本
+```js
+// ======================================================
+// 多签交易流程脚本（Postman Pre-request / Tests 中使用）
+// ======================================================
+
+// ---------------------------
+// 4. 获取环境变量（来自 Apifox / Postman 环境配置）
+// ---------------------------
+const env = pm.environment.toObject();
+const uuid = "c52ab694-8ff5-4c40-b617-cbb3b373d5eb";
+const targetUrl = env.BASE_URLS && env.BASE_URLS[uuid]; // 根据 UUID 获取前置 URL
+
+// 常用参数
+const chain_id        = env["chain-id"];
+const node            = env["node"];
+const home            = env["home"];
+const keyring_backend = env["keyring-backend"];
+const output          = env["output"];
+
+// 多签相关参数
+const MultisigAddress = env["MultisigAddress"];
+const MultisigSigners = env["MultisigSigners"].split(","); // 多签签名人列表
+const MultisigName    = env["MultisigName"];
+
+// ---------------------------
+// 5. 获取 transfer.json 数据（stdout）
+// ---------------------------
+let resJson = pm.response.json();
+let transferJson = resJson.stdout; // 主交易 JSON 文件路径
+
+// ---------------------------
+// 6. 多签流程：签名、合并、广播
+// ---------------------------
+let signedTxs = []; // 保存各 signer 的签名文件路径
+
+/**
+ * 6.1 单个签名流程
+ * @param {string} signer 签名人
+ * @param {function} callback 回调函数
+ */
+function signTx(signer, callback) {
+    const url = targetUrl + "/gead/tx/sign?fileName=" + encodeURIComponent(transferJson);
+
+    pm.sendRequest({
+        url: url,
+        method: "POST",
+        header: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: {
+            mode: "formdata",
+            formdata: [
+                { key: "from", value: signer },
+                { key: "multisig", value: MultisigAddress },
+                { key: "chain-id", value: chain_id },
+                { key: "node", value: node },
+                { key: "home", value: home },
+                { key: "keyring-backend", value: keyring_backend },
+                { key: "output", value: output }
+            ]
+        }
+    }, function(err, res) {
+        if (err) {
+            console.error(`签名失败: ${signer}`, err);
+            return;
+        }
+        signedTxs.push(res.json().stdout); // 保存签名文件路径
+        callback(); // 继续下一个 signer
+    });
+}
+
+/**
+ * 6.2 递归处理所有 signer
+ * @param {number} index 当前 signer 索引
+ */
+function processSigners(index) {
+    if (index >= MultisigSigners.length) {
+        mergeMultisign(signedTxs); // 所有签名完成 → 合并多签
+        return;
+    }
+    signTx(MultisigSigners[index], function() {
+        processSigners(index + 1);
+    });
+}
+
+/**
+ * 6.3 合并多签交易
+ * @param {string[]} fileList 所有签名文件路径
+ */
+function mergeMultisign(fileList) {
+    const fileParams = fileList.map(f => "fileName=" + encodeURIComponent(f)).join("&");
+    const url = targetUrl + "/gead/tx/multisign?tx=" 
+              + encodeURIComponent(transferJson) 
+              + "&MultisigName=" + MultisigName 
+              + "&" + fileParams;
+
+    pm.sendRequest({
+        url: url,
+        method: "POST",
+        header: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: {
+            mode: "formdata",
+            formdata: [
+                { key: "chain-id", value: chain_id },
+                { key: "node", value: node },
+                { key: "home", value: home },
+                { key: "keyring-backend", value: keyring_backend },
+                { key: "output", value: output }
+            ]
+        }
+    }, function(err, res) {
+        if (err) {
+            console.error("合并多签失败", err);
+            return;
+        }
+        broadcastTx(res.json().stdout); // 合并成功 → 广播
+    });
+}
+
+/**
+ * 6.4 广播最终交易
+ * @param {string} mergedTxFile 合并后的交易文件路径
+ */
+function broadcastTx(mergedTxFile) {
+    const url = targetUrl + "/gead/tx/broadcast?fileName=" + encodeURIComponent(mergedTxFile);
+
+    pm.sendRequest({
+        url: url,
+        method: "POST",
+        header: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: {
+            mode: "formdata",
+            formdata: [
+                { key: "chain-id", value: chain_id },
+                { key: "node", value: node },
+                { key: "home", value: home },
+                { key: "keyring-backend", value: keyring_backend },
+                { key: "output", value: output }
+            ]
+        }
+    }, function(err, res) {
+        if (err) {
+            console.error("广播交易失败", err);
+            return;
+        }
+
+        // console.log("广播结果:", res.json());
+    });
+}
+
+// ---------------------------
+// 7. 启动多签签名流程
+// ---------------------------
+processSigners(0);
+
+
+
+```
+
+
+
+
+第一版
 ---
 
 ## 环境准备
