@@ -7,7 +7,7 @@ import shutil, subprocess, json
 from pathlib import Path
 import logging
 
-app = FastAPI(title="Chain Gateway API")
+app = FastAPI(title="Chain Bridge API")
 
 # --------------------------
 # 日志配置
@@ -61,6 +61,7 @@ def process_output(output: Optional[str]):
         except json.JSONDecodeError:
             pass
     return output.splitlines()
+
 
 def run_cmd(cmd_list: list[str], input_text: Optional[str] = None) -> Tuple[int, str, str]:
     """
@@ -177,7 +178,9 @@ async def execute_command(binary: str, command_type: str, full_path: str, reques
                 "stderr": process_output(stderr), "msg": "等待返回，控制台查看结果！"}
 
     # 普通命令
-    return {"command": " ".join(base_cmd), "success": exit_code, "stdout": process_output(stdout),
+    cmd_for_display = " ".join(f'"{x}"' if x == "" else x for x in base_cmd)
+
+    return {"command": cmd_for_display, "success": exit_code, "stdout": process_output(stdout),
             "stderr": process_output(stderr)}
 
 

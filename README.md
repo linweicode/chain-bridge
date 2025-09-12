@@ -51,7 +51,7 @@ const ReqUseMultisig = formData.hasOwnProperty("generate-only") && formData["gen
 // 最终判断是否进入多签流程
 const NeedMultisig = EnvUseMultisig && ReqUseMultisig;
 
-console.log("是否进入多签流程 NeedMultisig:", NeedMultisig);
+// console.log("是否进入多签流程 NeedMultisig:", NeedMultisig);
 
 // ---------------------------
 // 3. 如果不需要多签 → 移除 generate-only 并退出
@@ -76,7 +76,12 @@ if (!NeedMultisig) {
 // ======================================================
 // 多签交易流程脚本（Postman Pre-request / Tests 中使用）
 // ======================================================
-
+// 1. 判断是否需要多签
+const NeedMultisig = pm.environment.get("NeedMultisig");
+if (NeedMultisig === undefined || NeedMultisig.toLowerCase() === "false") {
+    console.log("多签流程被跳过，因为 NeedMultisig = false 或未设置");
+    return; // 直接退出脚本，不执行后续多签操作
+}
 // ---------------------------
 // 4. 获取环境变量（来自 Apifox / Postman 环境配置）
 // ---------------------------
@@ -224,7 +229,6 @@ function broadcastTx(mergedTxFile) {
 // 7. 启动多签签名流程
 // ---------------------------
 processSigners(0);
-
 
 
 ```
