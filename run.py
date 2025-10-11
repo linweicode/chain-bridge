@@ -1,5 +1,5 @@
 import uvicorn
-from main import app  # 确保你的 FastAPI 实例在 main.py 中名为 app
+from app import app  # 确保你的 FastAPI 实例在 app.py 中名为 app
 
 if __name__ == "__main__":
     # 第一版，fastapi处理多签的流程
